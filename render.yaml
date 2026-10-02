@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: globalvest-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: GV_ENV
+        value: staging
+      - key: GV_EXECUTION_MODE
+        value: paper
+      - key: GV_REAL_MONEY_ENABLED
+        value: "false"
