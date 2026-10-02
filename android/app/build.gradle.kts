@@ -4,9 +4,7 @@ android {
     namespace = "com.globalvest.app"
     compileSdk = 35
 
-    buildFeatures {
-        buildConfig = true
-    }
+    buildFeatures { buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -17,8 +15,8 @@ android {
         applicationId = "com.globalvest.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "4.0.0"
+        versionCode = 41
+        versionName = "4.1.0"
         buildConfigField("String", "API_BASE_URL", "\"https://globalvest-backend-1.onrender.com\"")
     }
 
@@ -30,9 +28,7 @@ android {
     }
 }
 
-kotlin {
-    jvmToolchain(17)
-}
+kotlin { jvmToolchain(17) }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
