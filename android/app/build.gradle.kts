@@ -1,10 +1,28 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
-android { namespace = "com.globalvest.app"; compileSdk = 35
-    defaultConfig { applicationId = "com.globalvest.app"; minSdk = 26; targetSdk = 35; versionCode = 35; versionName = "3.5.0"
+android {
+    namespace = "com.globalvest.app"
+    compileSdk = 35
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    defaultConfig {
+        applicationId = "com.globalvest.app"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 35
+        versionName = "3.5.0"
         buildConfigField("String", "API_BASE_URL", "\"https://globalvest-backend-1.onrender.com\"")
     }
-    buildTypes { release { isMinifyEnabled = false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") } }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
 }
 
 dependencies {
