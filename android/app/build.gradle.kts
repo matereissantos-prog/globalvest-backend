@@ -8,6 +8,11 @@ android {
         buildConfig = true
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     defaultConfig {
         applicationId = "com.globalvest.app"
         minSdk = 26
@@ -23,6 +28,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
