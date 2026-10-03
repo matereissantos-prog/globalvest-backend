@@ -15,6 +15,7 @@ class MainActivity : AppCompatActivity() {
     private val navy = Color.rgb(8, 24, 48)
     private val blue = Color.rgb(24, 96, 190)
     private val green = Color.rgb(22, 132, 92)
+    private var currentProfile = "Moderado"
 
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); showWelcome() }
 
@@ -28,9 +29,10 @@ class MainActivity : AppCompatActivity() {
     private fun label(text:String,size:Float,color:Int=Color.DKGRAY,top:Int=8,bottom:Int=8)=TextView(this).apply { this.text=text; textSize=size; setTextColor(color); setPadding(0,top,0,bottom) }
     private fun button(text:String,action:()->Unit)=Button(this).apply { this.text=text; isAllCaps=false; textSize=16f; setOnClickListener{action()} }
     private fun money(v:Double)="R$ ${String.format("%,.2f",v).replace(',', 'X').replace('.', ',').replace('X','.')}"
+    private fun apiProfile(profile:String)=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
 
     private fun showWelcome() {
-        base("MVP Beta 4.2", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.3", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
         root.addView(button("Entrar no MVP"){showLogin()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
@@ -50,61 +52,83 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDashboard(profile:String,growth:Int,defensive:Int,cash:Int) {
-        base("Olá 👋","Dashboard • Perfil $profile"); root.addView(label("Patrimônio simulado",14f,Color.GRAY)); root.addView(label("R$ 10.000,00",30f,navy,0,4)); root.addView(label("PAPER • sem dinheiro real",14f,green,0,24))
+        currentProfile=profile
+        base("Olá 👋","Dashboard • Perfil $profile"); root.addView(label("Patrimônio inicial simulado",14f,Color.GRAY)); root.addView(label("R$ 10.000,00",30f,navy,0,4)); root.addView(label("PAPER • sem dinheiro real",14f,green,0,24))
         root.addView(label("Carteira recomendada",20f,navy)); root.addView(label("Crescimento global     $growth%\nDefensivos / renda fixa     $defensive%\nReserva / caixa     $cash%",16f,Color.DKGRAY,8,18))
-        root.addView(button("Simular investimento de R$ 10.000"){requestPortfolio(profile)}); root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
+        root.addView(button("Ver carteira simulada"){requestPortfolio(profile)})
+        root.addView(button("Desempenho / histórico"){requestHistory(profile)})
+        root.addView(button("Prévia de rebalanceamento"){requestRebalance(profile)})
+        root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
     }
 
+    private fun post(path:String, profile:String):JSONObject {
+        val c=(URL(BuildConfig.API_BASE_URL+path).openConnection() as HttpsURLConnection).apply {
+            requestMethod="POST"; connectTimeout=65000; readTimeout=65000; doOutput=true; setRequestProperty("Content-Type","application/json")
+        }
+        val request=JSONObject().put("risk_profile",apiProfile(profile)).put("capital_brl",10000).toString()
+        c.outputStream.bufferedWriter().use { it.write(request) }
+        val code=c.responseCode
+        val stream=if(code in 200..299)c.inputStream else c.errorStream
+        val body=stream.bufferedReader().use { it.readText() }
+        if(code !in 200..299) throw IllegalStateException("HTTP $code")
+        return JSONObject(body)
+    }
+
+    private fun paperSafe(json:JSONObject):Boolean = json.optString("mode")=="PAPER" && !json.optBoolean("real_money",true) && !json.optBoolean("live_market_data",true)
+
     private fun requestPortfolio(profile:String) {
-        Toast.makeText(this,"Consultando Portfolio Engine 4.2…",Toast.LENGTH_SHORT).show()
-        Thread {
-            try {
-                val apiProfile=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
-                val c=(URL(BuildConfig.API_BASE_URL+"/portfolio/recommendation").openConnection() as HttpsURLConnection).apply {
-                    requestMethod="POST"; connectTimeout=65000; readTimeout=65000; doOutput=true; setRequestProperty("Content-Type","application/json")
-                }
-                val request=JSONObject().put("risk_profile",apiProfile).put("capital_brl",10000).toString()
-                c.outputStream.bufferedWriter().use { it.write(request) }
-                val code=c.responseCode
-                val stream=if(code in 200..299)c.inputStream else c.errorStream
-                val body=stream.bufferedReader().use { it.readText() }
-                val json=JSONObject(body)
-                val execution=json.optJSONObject("execution")
-                if(code !in 200..299 || json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optBoolean("live_market_data",true) || execution?.optBoolean("broker_order_sent",true)!=false || execution.optBoolean("direct_execution",true)) {
-                    throw IllegalStateException("Resposta insegura")
-                }
-                val positions=json.getJSONArray("positions")
-                runOnUiThread { showPortfolioFromApi(profile,positions,json.optDouble("total_allocated_brl",10000.0)) }
-            } catch(e:Exception) { runOnUiThread { Toast.makeText(this,"Não foi possível consultar o Portfolio Engine. Tente novamente em instantes.",Toast.LENGTH_LONG).show() } }
-        }.start()
+        Toast.makeText(this,"Consultando Portfolio Engine…",Toast.LENGTH_SHORT).show()
+        Thread { try {
+            val json=post("/portfolio/recommendation",profile)
+            val execution=json.optJSONObject("execution")
+            if(!paperSafe(json) || execution?.optBoolean("broker_order_sent",true)!=false || execution.optBoolean("direct_execution",true)) throw IllegalStateException("Resposta insegura")
+            val positions=json.getJSONArray("positions")
+            runOnUiThread { showPortfolioFromApi(profile,positions,json.optDouble("total_allocated_brl",10000.0)) }
+        } catch(e:Exception) { runOnUiThread { Toast.makeText(this,"Não foi possível consultar a carteira.",Toast.LENGTH_LONG).show() } } }.start()
     }
 
     private fun showPortfolioFromApi(profile:String, positions:JSONArray, total:Double) {
-        base("Carteira simulada","Portfolio Engine 4.2 • Perfil $profile")
+        base("Carteira simulada","Portfolio Engine • Perfil $profile")
         root.addView(label("Total alocado",14f,Color.GRAY)); root.addView(label(money(total),28f,navy,0,20))
-
         for(i in 0 until positions.length()) {
             val p=positions.getJSONObject(i)
-            val symbol=p.getString("symbol")
-            val name=p.getString("name")
-            val weight=p.getDouble("target_weight_pct")
-            val price=p.getDouble("simulated_price_brl")
-            val qty=p.getDouble("quantity")
-            val value=p.getDouble("market_value_brl")
-            root.addView(label("$symbol • $name",17f,navy,14,2))
-            root.addView(label("Peso: ${weight}%\nPreço simulado: ${money(price)}\nQuantidade: ${String.format("%.4f",qty)}\nValor da posição: ${money(value)}",15f,Color.DKGRAY,0,10))
+            root.addView(label("${p.getString("symbol")} • ${p.getString("name")}",17f,navy,14,2))
+            root.addView(label("Peso: ${p.getDouble("target_weight_pct")}%\nPreço simulado: ${money(p.getDouble("simulated_price_brl"))}\nQuantidade: ${String.format("%.4f",p.getDouble("quantity"))}\nValor da posição: ${money(p.getDouble("market_value_brl"))}",15f,Color.DKGRAY,0,10))
         }
-
-        root.addView(label("Carteira recebida do servidor ✓",18f,green,24,4))
-        root.addView(label("PAPER • preços sintéticos de demonstração • sem cotações ao vivo • nenhuma ordem enviada à corretora",14f,Color.DKGRAY,4,20))
-        root.addView(button("Voltar ao dashboard"){showRisk()})
+        root.addView(label("Carteira recebida do servidor ✓",18f,green,24,4)); root.addView(label("PAPER • preços sintéticos • nenhuma ordem enviada à corretora",14f,Color.DKGRAY,4,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
     }
+
+    private fun requestHistory(profile:String) {
+        Toast.makeText(this,"Carregando histórico…",Toast.LENGTH_SHORT).show()
+        Thread { try { val json=post("/portfolio/history",profile); if(!paperSafe(json)) throw IllegalStateException("Resposta insegura"); runOnUiThread { showHistory(profile,json) } }
+        catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Não foi possível carregar o histórico.",Toast.LENGTH_LONG).show() } } }.start()
+    }
+
+    private fun showHistory(profile:String,json:JSONObject) {
+        base("Desempenho simulado","Portfolio Engine ${json.optString("engine_version","4.3")} • Perfil $profile")
+        val start=json.optDouble("starting_value_brl",10000.0); val current=json.optDouble("current_value_brl",start); val ret=json.optDouble("return_pct",0.0)
+        root.addView(label("Valor inicial",14f,Color.GRAY)); root.addView(label(money(start),22f,navy,0,12)); root.addView(label("Valor atual simulado",14f,Color.GRAY)); root.addView(label(money(current),30f,navy,0,8)); root.addView(label("Retorno simulado: ${String.format("%.2f",ret)}%",18f,if(ret>=0)green else Color.RED,0,22))
+        root.addView(label("Histórico PAPER recebido do servidor ✓",17f,green)); root.addView(label("Resultados simulados não representam garantia de rentabilidade futura.",13f,Color.GRAY,8,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
+    private fun requestRebalance(profile:String) {
+        Toast.makeText(this,"Calculando prévia…",Toast.LENGTH_SHORT).show()
+        Thread { try { val json=post("/portfolio/rebalance-preview",profile); if(!paperSafe(json) || json.optString("action")!="PREVIEW_ONLY") throw IllegalStateException("Resposta insegura"); runOnUiThread { showRebalance(profile,json) } }
+        catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Não foi possível calcular a prévia.",Toast.LENGTH_LONG).show() } } }.start()
+    }
+
+    private fun showRebalance(profile:String,json:JSONObject) {
+        base("Rebalanceamento","Prévia somente • nenhuma ordem será executada")
+        root.addView(label("Patrimônio simulado",14f,Color.GRAY)); root.addView(label(money(json.optDouble("portfolio_value_brl",10000.0)),28f,navy,0,18))
+        val drift=json.optJSONArray("drift") ?: JSONArray()
+        for(i in 0 until drift.length()) { val d=drift.getJSONObject(i); val delta=d.optDouble("drift_pct",0.0); root.addView(label("${d.optString("symbol")}\nAlvo: ${d.optDouble("target_weight_pct")}% • Atual: ${d.optDouble("current_weight_pct")}%\nDesvio: ${if(delta>=0)"+" else ""}${String.format("%.2f",delta)} p.p.",16f,navy,10,8)) }
+        root.addView(label("PREVIEW ONLY ✓",18f,green,20,4)); root.addView(label("O sistema apenas calcula os ajustes necessários. Dinheiro real e envio de ordens continuam desativados.",14f,Color.DKGRAY,4,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
+    private fun showDashboardFor(profile:String) { when(profile){"Conservador"->showDashboard(profile,30,55,15);"Arrojado"->showDashboard(profile,75,15,10);else->showDashboard(profile,55,35,10)} }
 
     private fun testHealth() {
         Toast.makeText(this,"Conectando ao servidor…",Toast.LENGTH_SHORT).show()
-        Thread { try {
-            val c=(URL(BuildConfig.API_BASE_URL+"/health").openConnection() as HttpsURLConnection).apply { requestMethod="GET"; connectTimeout=65000; readTimeout=65000 }
-            val body=c.inputStream.bufferedReader().use{it.readText()}; runOnUiThread { Toast.makeText(this,if(c.responseCode in 200..299&&body.contains("PAPER"))"Servidor ONLINE ✓ • PAPER confirmado" else "Servidor respondeu, validação pendente",Toast.LENGTH_LONG).show() }
-        } catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Servidor gratuito pode estar acordando. Tente novamente em instantes.",Toast.LENGTH_LONG).show() } } }.start()
+        Thread { try { val c=(URL(BuildConfig.API_BASE_URL+"/health").openConnection() as HttpsURLConnection).apply { requestMethod="GET"; connectTimeout=65000; readTimeout=65000 }; val body=c.inputStream.bufferedReader().use{it.readText()}; runOnUiThread { Toast.makeText(this,if(c.responseCode in 200..299&&body.contains("PAPER"))"Servidor ONLINE ✓ • PAPER confirmado" else "Servidor respondeu, validação pendente",Toast.LENGTH_LONG).show() } } catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Servidor gratuito pode estar acordando. Tente novamente em instantes.",Toast.LENGTH_LONG).show() } } }.start()
     }
 }
