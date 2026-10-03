@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
@@ -26,9 +27,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun label(text:String,size:Float,color:Int=Color.DKGRAY,top:Int=8,bottom:Int=8)=TextView(this).apply { this.text=text; textSize=size; setTextColor(color); setPadding(0,top,0,bottom) }
     private fun button(text:String,action:()->Unit)=Button(this).apply { this.text=text; isAllCaps=false; textSize=16f; setOnClickListener{action()} }
+    private fun money(v:Double)="R$ ${String.format("%,.2f",v).replace(',', 'X').replace('.', ',').replace('X','.')}"
 
     private fun showWelcome() {
-        base("MVP Beta 4.1", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.2", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
         root.addView(button("Entrar no MVP"){showLogin()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
@@ -54,7 +56,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestPortfolio(profile:String) {
-        Toast.makeText(this,"Consultando Portfolio Engine…",Toast.LENGTH_SHORT).show()
+        Toast.makeText(this,"Consultando Portfolio Engine 4.2…",Toast.LENGTH_SHORT).show()
         Thread {
             try {
                 val apiProfile=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
@@ -67,20 +69,34 @@ class MainActivity : AppCompatActivity() {
                 val stream=if(code in 200..299)c.inputStream else c.errorStream
                 val body=stream.bufferedReader().use { it.readText() }
                 val json=JSONObject(body)
-                if(code !in 200..299 || json.optString("mode")!="PAPER" || json.optBoolean("real_money",true)) throw IllegalStateException("Resposta insegura")
-                val weights=json.getJSONObject("weights_pct"); val allocations=json.getJSONObject("allocations_brl")
-                runOnUiThread { showPortfolioFromApi(profile,weights.getInt("global_growth"),weights.getInt("defensive_fixed_income"),weights.getInt("cash_reserve"),allocations.getDouble("global_growth"),allocations.getDouble("defensive_fixed_income"),allocations.getDouble("cash_reserve")) }
+                val execution=json.optJSONObject("execution")
+                if(code !in 200..299 || json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optBoolean("live_market_data",true) || execution?.optBoolean("broker_order_sent",true)!=false || execution.optBoolean("direct_execution",true)) {
+                    throw IllegalStateException("Resposta insegura")
+                }
+                val positions=json.getJSONArray("positions")
+                runOnUiThread { showPortfolioFromApi(profile,positions,json.optDouble("total_allocated_brl",10000.0)) }
             } catch(e:Exception) { runOnUiThread { Toast.makeText(this,"Não foi possível consultar o Portfolio Engine. Tente novamente em instantes.",Toast.LENGTH_LONG).show() } }
         }.start()
     }
 
-    private fun showPortfolioFromApi(profile:String,growth:Int,defensive:Int,cash:Int,growthValue:Double,defensiveValue:Double,cashValue:Double) {
-        base("Carteira simulada","Portfolio Engine 4.1 • Perfil $profile")
-        fun money(v:Double)="R$ ${String.format("%,.2f",v).replace(',', 'X').replace('.', ',').replace('X','.')}"
-        root.addView(label("Crescimento global",15f,Color.GRAY)); root.addView(label("$growth%  •  ${money(growthValue)}",20f,navy))
-        root.addView(label("Defensivos / renda fixa",15f,Color.GRAY)); root.addView(label("$defensive%  •  ${money(defensiveValue)}",20f,navy))
-        root.addView(label("Reserva / caixa",15f,Color.GRAY)); root.addView(label("$cash%  •  ${money(cashValue)}",20f,navy))
-        root.addView(label("Carteira recebida do servidor ✓",18f,green,24,4)); root.addView(label("PAPER • dinheiro real desativado • nenhuma ordem enviada à corretora",14f,Color.DKGRAY,4,20))
+    private fun showPortfolioFromApi(profile:String, positions:JSONArray, total:Double) {
+        base("Carteira simulada","Portfolio Engine 4.2 • Perfil $profile")
+        root.addView(label("Total alocado",14f,Color.GRAY)); root.addView(label(money(total),28f,navy,0,20))
+
+        for(i in 0 until positions.length()) {
+            val p=positions.getJSONObject(i)
+            val symbol=p.getString("symbol")
+            val name=p.getString("name")
+            val weight=p.getDouble("target_weight_pct")
+            val price=p.getDouble("simulated_price_brl")
+            val qty=p.getDouble("quantity")
+            val value=p.getDouble("market_value_brl")
+            root.addView(label("$symbol • $name",17f,navy,14,2))
+            root.addView(label("Peso: ${weight}%\nPreço simulado: ${money(price)}\nQuantidade: ${String.format("%.4f",qty)}\nValor da posição: ${money(value)}",15f,Color.DKGRAY,0,10))
+        }
+
+        root.addView(label("Carteira recebida do servidor ✓",18f,green,24,4))
+        root.addView(label("PAPER • preços sintéticos de demonstração • sem cotações ao vivo • nenhuma ordem enviada à corretora",14f,Color.DKGRAY,4,20))
         root.addView(button("Voltar ao dashboard"){showRisk()})
     }
 
