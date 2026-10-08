@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
+import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
 
 class MainActivity : AppCompatActivity() {
@@ -16,6 +17,15 @@ class MainActivity : AppCompatActivity() {
     private val blue = Color.rgb(24, 96, 190)
     private val green = Color.rgb(22, 132, 92)
     private var currentProfile = "Moderado"
+    private val prefs by lazy { getSharedPreferences("globalvest_paper", MODE_PRIVATE) }
+    private fun deviceKey():String {
+        val saved=prefs.getString("device_key",null)
+        if(saved!=null) return saved
+        val created="gv-"+UUID.randomUUID().toString()
+        prefs.edit().putString("device_key",created).apply()
+        return created
+    }
+    private fun profileLabel(key:String)=when(key){"conservative"->"Conservador";"aggressive"->"Arrojado";else->"Moderado"}
 
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); showWelcome() }
 
@@ -32,10 +42,65 @@ class MainActivity : AppCompatActivity() {
     private fun apiProfile(profile:String)=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
 
     private fun showWelcome() {
-        base("MVP Beta 4.3", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.5", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
-        root.addView(button("Entrar no MVP"){showLogin()}); root.addView(button("Testar servidor"){testHealth()})
+        root.addView(button("Entrar no MVP"){recoverAccount()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
+    }
+
+
+    private fun recoverAccount() {
+        base("Recuperando conta PAPER","Consultando sua conta de demonstração no servidor…")
+        Thread {
+            try {
+                val c=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()).openConnection() as HttpsURLConnection).apply {
+                    requestMethod="GET";connectTimeout=65000;readTimeout=65000
+                }
+                val status=c.responseCode
+                if(status==404) { c.disconnect();runOnUiThread { showRisk() };return@Thread }
+                if(status!=200) throw IllegalStateException("HTTP $status")
+                val json=JSONObject(c.inputStream.bufferedReader().use{it.readText()})
+                c.disconnect()
+                if(json.optString("mode")!="PAPER" || !json.optBoolean("persistent",false) || json.optString("device_key")!=deviceKey())
+                    throw IllegalStateException("Conta PAPER inválida")
+                val profile=profileLabel(json.optString("risk_profile"))
+                val balance=json.getDouble("current_value_brl")
+                runOnUiThread { showDashboardFor(profile);root.addView(label("Conta persistente recuperada ✓ • Patrimônio PAPER: "+money(balance),16f,green,18,4)) }
+            } catch(e:Exception) {
+                runOnUiThread {
+                    base("Não foi possível recuperar a conta","Sua conta não foi apagada. Verifique a conexão e tente novamente.")
+                    root.addView(button("Tentar novamente"){recoverAccount()})
+                    root.addView(button("Voltar"){showWelcome()})
+                }
+            }
+        }.start()
+    }
+
+    private fun createPaperAccount(profile:String) {
+        base("Preparando conta PAPER","Salvando seu perfil de risco no servidor…")
+        Thread {
+            try {
+                val c=(URL(BuildConfig.API_BASE_URL+"/demo/account").openConnection() as HttpsURLConnection).apply {
+                    requestMethod="POST";connectTimeout=65000;readTimeout=65000;doOutput=true
+                    setRequestProperty("Content-Type","application/json")
+                }
+                val payload=JSONObject().put("device_key",deviceKey()).put("risk_profile",apiProfile(profile))
+                c.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+                val status=c.responseCode
+                if(status !in 200..299) throw IllegalStateException("HTTP $status")
+                val json=JSONObject(c.inputStream.bufferedReader().use{it.readText()})
+                c.disconnect()
+                if(json.optString("mode")!="PAPER" || !json.optBoolean("persistent",false) || json.optString("device_key")!=deviceKey())
+                    throw IllegalStateException("Conta PAPER inválida")
+                runOnUiThread { showDashboardFor(profile);root.addView(label("Conta de demonstração salva no servidor ✓",16f,green,18,4)) }
+            } catch(e:Exception) {
+                runOnUiThread {
+                    base("Falha ao salvar conta","Não foi possível confirmar a conta persistente. Nenhum dinheiro real foi movimentado.")
+                    root.addView(button("Tentar novamente"){createPaperAccount(profile)})
+                    root.addView(button("Escolher outro perfil"){showRisk()})
+                }
+            }
+        }.start()
     }
 
     private fun showLogin() {
@@ -47,7 +112,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showRisk() {
         base("Seu perfil de risco","Escolha como você prefere equilibrar estabilidade e crescimento.")
-        root.addView(button("Conservador"){showDashboard("Conservador",30,55,15)}); root.addView(button("Moderado"){showDashboard("Moderado",55,35,10)}); root.addView(button("Arrojado"){showDashboard("Arrojado",75,15,10)})
+        root.addView(button("Conservador"){createPaperAccount("Conservador")}); root.addView(button("Moderado"){createPaperAccount("Moderado")}); root.addView(button("Arrojado"){createPaperAccount("Arrojado")})
         root.addView(label("No MVP, o perfil controla somente uma carteira simulada. Antes de uso real, suitability e regras do parceiro regulado serão necessários.",13f,Color.GRAY,22,0))
     }
 
