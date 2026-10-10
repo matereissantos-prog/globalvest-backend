@@ -1,6 +1,12 @@
 package com.globalvest.app
 
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.view.View
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import android.os.Bundle
 import android.text.InputType
 import android.widget.*
@@ -43,7 +49,7 @@ class MainActivity : AppCompatActivity() {
     private fun apiProfile(profile:String)=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
 
     private fun showWelcome() {
-        base("MVP Beta 4.6", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.7", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
         root.addView(button("Entrar no MVP"){recoverAccount()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
@@ -127,6 +133,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Desempenho / histórico"){requestHistory(profile)})
         root.addView(button("Registrar evolução simulada"){savePaperSnapshot(profile)})
         root.addView(button("Ver registros da conta"){loadPaperSnapshots(profile)})
+        root.addView(button("Gráfico de evolução patrimonial"){loadPaperSnapshots(profile)})
         root.addView(button("Prévia de rebalanceamento"){requestRebalance(profile)})
         root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
     }
@@ -194,10 +201,29 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 base("Registros persistentes","Histórico de atualizações da conta de demonstração")
                 val items=json.getJSONArray("snapshots")
-                if(items.length()==0) root.addView(label("Nenhum snapshot registrado ainda.",16f))
+                val records=mutableListOf<Pair<String,Double>>()
                 for(i in 0 until items.length()) {
                     val item=items.getJSONObject(i)
-                    root.addView(label(item.optString("created_at")+" • "+item.optString("event_type")+"\n"+money(item.getDouble("portfolio_value_brl")),16f,navy,12,10))
+                    records.add(item.optString("created_at") to item.getDouble("portfolio_value_brl"))
+                }
+                records.sortBy { it.first }
+                val initial=10000.0
+                val values=listOf(initial)+records.map { it.second }
+                val latest=values.last()
+                val change=latest-initial
+                val percent=change/initial*100
+                root.addView(label("Evolução do patrimônio PAPER",20f,navy,10,6))
+                root.addView(label("Inicial: "+money(initial)+" • Atual: "+money(latest),16f,navy))
+                root.addView(label("Variação: "+money(change)+" ("+String.format(Locale("pt","BR"),"%+.2f",percent)+"%)",16f,if(change>=0)green else Color.RED))
+                root.addView(PaperChart(values).apply { minimumHeight=440 })
+                if(records.isEmpty()) root.addView(label("Nenhum snapshot registrado ainda. O gráfico mostra apenas o capital inicial.",15f))
+                for((date,value) in records.asReversed()) {
+                    val displayDate=try {
+                        val input=SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss",Locale.US).apply { timeZone=TimeZone.getTimeZone("UTC") }
+                        val output=SimpleDateFormat("dd/MM/yyyy HH:mm",Locale("pt","BR")).apply { timeZone=TimeZone.getDefault() }
+                        output.format(input.parse(date)!!)
+                    } catch(e:Exception) { date }
+                    root.addView(label(displayDate+" • Avaliação simulada\\n"+money(value),16f,navy,12,10))
                 }
                 root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
             }
@@ -206,6 +232,34 @@ class MainActivity : AppCompatActivity() {
             root.addView(button("Tentar novamente"){loadPaperSnapshots(profile)})
             root.addView(button("Voltar"){showDashboardFor(profile)})
         } } }.start()
+    }
+
+    private inner class PaperChart(private val values:List<Double>):View(this) {
+        private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(canvas:Canvas) {
+            super.onDraw(canvas)
+            val left=80f;val right=width-25f;val top=35f;val bottom=height-75f
+            val min=values.minOrNull() ?: 0.0
+            val max=values.maxOrNull() ?: 1.0
+            val padding=((max-min)*0.15).coerceAtLeast(50.0)
+            val low=min-padding;val high=max+padding
+            paint.color=Color.LTGRAY;paint.strokeWidth=2f
+            for(i in 0..4) {
+                val y=top+(bottom-top)*i/4f
+                canvas.drawLine(left,y,right,y,paint)
+                paint.color=Color.DKGRAY;paint.textSize=25f
+                canvas.drawText(String.format(Locale("pt","BR"),"%.0f",high-(high-low)*i/4),4f,y+8f,paint)
+                paint.color=Color.LTGRAY
+            }
+            paint.color=blue;paint.strokeWidth=5f;paint.style=Paint.Style.STROKE
+            fun x(i:Int)=left+(right-left)*i/(values.size-1).coerceAtLeast(1).toFloat()
+            fun y(v:Double)=(bottom-(v-low)/(high-low)*(bottom-top)).toFloat()
+            if(values.size==1) canvas.drawCircle(x(0),y(values[0]),5f,paint)
+            else for(i in 1 until values.size) canvas.drawLine(x(i-1),y(values[i-1]),x(i),y(values[i]),paint)
+            paint.style=Paint.Style.FILL;paint.color=navy;paint.textSize=26f
+            canvas.drawText("Início",left,bottom+40f,paint)
+            canvas.drawText("Atual",right-65f,bottom+40f,paint)
+        }
     }
 
     private fun requestHistory(profile:String) {
