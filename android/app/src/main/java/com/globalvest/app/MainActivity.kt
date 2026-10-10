@@ -287,7 +287,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestRebalance(profile:String) {
         Toast.makeText(this,"Calculando prévia…",Toast.LENGTH_SHORT).show()
-        Thread { try { val json=post("/portfolio/rebalance-preview",profile); if(!paperSafe(json) || json.optString("action")!="PREVIEW_ONLY") throw IllegalStateException("Resposta insegura"); runOnUiThread { showRebalance(profile,json) } }
+        Thread { try { val json=post("/portfolio/rebalance-decision",profile); if(!paperSafe(json) || json.optString("action")!="DECISION_ONLY" || json.optBoolean("broker_order_sent",true) || json.optBoolean("direct_execution",true)) throw IllegalStateException("Resposta insegura"); runOnUiThread { showRebalance(profile,json) } }
         catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Não foi possível calcular a prévia.",Toast.LENGTH_LONG).show() } } }.start()
     }
 
@@ -296,7 +296,17 @@ class MainActivity : AppCompatActivity() {
         root.addView(label("Patrimônio simulado",14f,Color.GRAY)); root.addView(label(money(json.optDouble("portfolio_value_brl",10000.0)),28f,navy,0,18))
         val drift=json.optJSONArray("drift") ?: JSONArray()
         for(i in 0 until drift.length()) { val d=drift.getJSONObject(i); val delta=d.optDouble("drift_pct",0.0); root.addView(label("${d.optString("symbol")}\nAlvo: ${d.optDouble("target_weight_pct")}% • Atual: ${d.optDouble("current_weight_pct")}%\nDesvio: ${if(delta>=0)"+" else ""}${String.format("%.2f",delta)} p.p.",16f,navy,10,8)) }
-        root.addView(label("PREVIEW ONLY ✓",18f,green,20,4)); root.addView(label("O sistema apenas calcula os ajustes necessários. Dinheiro real e envio de ordens continuam desativados.",14f,Color.DKGRAY,4,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+        val orders=json.optJSONArray("orders") ?: JSONArray()
+        val noAction=json.optString("status")=="NO_ACTION"
+        root.addView(label(if(noAction) "Decisão: manter carteira ✓" else "Decisão: ajustes simulados sugeridos",19f,green,18,8))
+        if(noAction) root.addView(label("Desvios abaixo dos limites configurados. Nenhuma operação necessária.",15f,Color.DKGRAY))
+        else for(i in 0 until orders.length()) {
+            val order=orders.getJSONObject(i)
+            val side=if(order.optString("side")=="BUY") "COMPRA" else "VENDA"
+            root.addView(label("$side • ${order.optString("symbol")} • ${money(order.optDouble("notional_brl"))} (simulado)",16f,navy))
+        }
+        root.addView(label("Limites: ${json.optDouble("drift_threshold_pp")} p.p. e mínimo de ${money(json.optDouble("min_trade_brl"))}.",13f,Color.GRAY,8,8))
+        root.addView(label("DECISION ONLY ✓",18f,green,20,4)); root.addView(label("O sistema apenas calcula os ajustes necessários. Dinheiro real e envio de ordens continuam desativados.",14f,Color.DKGRAY,4,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
     }
 
     private fun showDashboardFor(profile:String) { when(profile){"Conservador"->showDashboard(profile,30,55,15);"Arrojado"->showDashboard(profile,75,15,10);else->showDashboard(profile,55,35,10)} }
