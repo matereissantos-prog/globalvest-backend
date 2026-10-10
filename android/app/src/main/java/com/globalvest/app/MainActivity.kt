@@ -46,10 +46,11 @@ class MainActivity : AppCompatActivity() {
     private fun label(text:String,size:Float,color:Int=Color.DKGRAY,top:Int=8,bottom:Int=8)=TextView(this).apply { this.text=text; textSize=size; setTextColor(color); setPadding(0,top,0,bottom) }
     private fun button(text:String,action:()->Unit)=Button(this).apply { this.text=text; isAllCaps=false; textSize=16f; setOnClickListener{action()} }
     private fun money(v:Double)="R$ ${String.format("%,.2f",v).replace(',', 'X').replace('.', ',').replace('X','.')}"
+    private fun signedMoney(v:Double)=(if(v>=0) "+" else "-")+money(kotlin.math.abs(v))
     private fun apiProfile(profile:String)=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
 
     private fun showWelcome() {
-        base("MVP Beta 4.7", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.8", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
         root.addView(button("Entrar no MVP"){recoverAccount()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
@@ -214,16 +215,22 @@ class MainActivity : AppCompatActivity() {
                 val percent=change/initial*100
                 root.addView(label("Evolução do patrimônio PAPER",20f,navy,10,6))
                 root.addView(label("Inicial: "+money(initial)+" • Atual: "+money(latest),16f,navy))
-                root.addView(label("Variação: "+money(change)+" ("+String.format(Locale("pt","BR"),"%+.2f",percent)+"%)",16f,if(change>=0)green else Color.RED))
+                root.addView(label("Variação acumulada: "+signedMoney(change)+" ("+String.format(Locale("pt","BR"),"%+.2f",percent)+"%)",16f,if(change>=0)green else Color.RED))
+                root.addView(label("Avaliações registradas: "+records.size,15f,Color.DKGRAY))
                 root.addView(PaperChart(values).apply { minimumHeight=440 })
                 if(records.isEmpty()) root.addView(label("Nenhum snapshot registrado ainda. O gráfico mostra apenas o capital inicial.",15f))
-                for((date,value) in records.asReversed()) {
+                for(i in records.indices.reversed()) {
+                    val (date,value)=records[i]
+                    val previous=if(i==0) initial else records[i-1].second
+                    val delta=value-previous
+                    val deltaPct=if(previous!=0.0) delta/previous*100 else 0.0
                     val displayDate=try {
                         val input=SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss",Locale.US).apply { timeZone=TimeZone.getTimeZone("UTC") }
                         val output=SimpleDateFormat("dd/MM/yyyy HH:mm",Locale("pt","BR")).apply { timeZone=TimeZone.getDefault() }
                         output.format(input.parse(date)!!)
                     } catch(e:Exception) { date }
-                    root.addView(label(displayDate+" • Avaliação simulada\\n"+money(value),16f,navy,12,10))
+                    root.addView(label(displayDate+" • Avaliação simulada\n"+money(value),16f,navy,12,2))
+                    root.addView(label("Desde o registro anterior: "+signedMoney(delta)+" ("+String.format(Locale("pt","BR"),"%+.2f",deltaPct)+"%)",14f,if(delta>=0)green else Color.RED,0,12))
                 }
                 root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
             }
