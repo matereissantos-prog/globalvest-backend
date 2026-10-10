@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity() {
     private val blue = Color.rgb(24, 96, 190)
     private val green = Color.rgb(22, 132, 92)
     private var currentProfile = "Moderado"
+    private var accountBalance = 10000.0
     private val prefs by lazy { getSharedPreferences("globalvest_paper", MODE_PRIVATE) }
     private fun deviceKey():String {
         val saved=prefs.getString("device_key",null)
@@ -42,7 +43,7 @@ class MainActivity : AppCompatActivity() {
     private fun apiProfile(profile:String)=when(profile){"Conservador"->"conservative"; "Arrojado"->"aggressive"; else->"moderate"}
 
     private fun showWelcome() {
-        base("MVP Beta 4.5", "Investimentos globais automatizados — ambiente de demonstração")
+        base("MVP Beta 4.6", "Investimentos globais automatizados — ambiente de demonstração")
         root.addView(label("PAPER TRADING",18f,blue,12,2)); root.addView(label("R$ 10.000 fictícios • dinheiro real desativado",15f,blue,0,28))
         root.addView(button("Entrar no MVP"){recoverAccount()}); root.addView(button("Testar servidor"){testHealth()})
         root.addView(label("Nenhuma ordem desta versão chega a uma corretora. Nenhum dinheiro real é movimentado.",13f,Color.GRAY,28,0))
@@ -65,6 +66,7 @@ class MainActivity : AppCompatActivity() {
                     throw IllegalStateException("Conta PAPER inválida")
                 val profile=profileLabel(json.optString("risk_profile"))
                 val balance=json.getDouble("current_value_brl")
+                accountBalance=balance
                 runOnUiThread { showDashboardFor(profile);root.addView(label("Conta persistente recuperada ✓ • Patrimônio PAPER: "+money(balance),16f,green,18,4)) }
             } catch(e:Exception) {
                 runOnUiThread {
@@ -92,6 +94,7 @@ class MainActivity : AppCompatActivity() {
                 c.disconnect()
                 if(json.optString("mode")!="PAPER" || !json.optBoolean("persistent",false) || json.optString("device_key")!=deviceKey())
                     throw IllegalStateException("Conta PAPER inválida")
+                accountBalance=json.getDouble("current_value_brl")
                 runOnUiThread { showDashboardFor(profile);root.addView(label("Conta de demonstração salva no servidor ✓",16f,green,18,4)) }
             } catch(e:Exception) {
                 runOnUiThread {
@@ -118,10 +121,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDashboard(profile:String,growth:Int,defensive:Int,cash:Int) {
         currentProfile=profile
-        base("Olá 👋","Dashboard • Perfil $profile"); root.addView(label("Patrimônio inicial simulado",14f,Color.GRAY)); root.addView(label("R$ 10.000,00",30f,navy,0,4)); root.addView(label("PAPER • sem dinheiro real",14f,green,0,24))
+        base("Olá 👋","Dashboard • Perfil $profile"); root.addView(label("Patrimônio PAPER registrado",14f,Color.GRAY)); root.addView(label(money(accountBalance),30f,navy,0,4)); root.addView(label("PAPER • sem dinheiro real",14f,green,0,24))
         root.addView(label("Carteira recomendada",20f,navy)); root.addView(label("Crescimento global     $growth%\nDefensivos / renda fixa     $defensive%\nReserva / caixa     $cash%",16f,Color.DKGRAY,8,18))
         root.addView(button("Ver carteira simulada"){requestPortfolio(profile)})
         root.addView(button("Desempenho / histórico"){requestHistory(profile)})
+        root.addView(button("Registrar evolução simulada"){savePaperSnapshot(profile)})
+        root.addView(button("Ver registros da conta"){loadPaperSnapshots(profile)})
         root.addView(button("Prévia de rebalanceamento"){requestRebalance(profile)})
         root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
     }
@@ -161,6 +166,46 @@ class MainActivity : AppCompatActivity() {
             root.addView(label("Peso: ${p.getDouble("target_weight_pct")}%\nPreço simulado: ${money(p.getDouble("simulated_price_brl"))}\nQuantidade: ${String.format("%.4f",p.getDouble("quantity"))}\nValor da posição: ${money(p.getDouble("market_value_brl"))}",15f,Color.DKGRAY,0,10))
         }
         root.addView(label("Carteira recebida do servidor ✓",18f,green,24,4)); root.addView(label("PAPER • preços sintéticos • nenhuma ordem enviada à corretora",14f,Color.DKGRAY,4,20)); root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
+
+    private fun savePaperSnapshot(profile:String) {
+        base("Atualizando conta PAPER","Registrando uma avaliação com preços sintéticos…")
+        Thread { try {
+            val json=post("/demo/account/"+deviceKey()+"/snapshot",profile)
+            if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optString("status")!="SAVED" || json.optString("device_key")!=deviceKey()) throw IllegalStateException("Resposta inválida")
+            accountBalance=json.getDouble("current_value_brl")
+            runOnUiThread { showDashboardFor(profile);root.addView(label("Snapshot simulado salvo ✓",17f,green,18,4)) }
+        } catch(e:Exception) { runOnUiThread {
+            base("Falha ao registrar","O servidor não confirmou o snapshot. Confira os registros antes de tentar novamente.")
+            root.addView(button("Ver registros"){loadPaperSnapshots(profile)})
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
+    }
+
+    private fun loadPaperSnapshots(profile:String) {
+        base("Registros da conta PAPER","Consultando snapshots persistentes…")
+        Thread { try {
+            val c=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()+"/snapshots").openConnection() as HttpsURLConnection).apply { requestMethod="GET";connectTimeout=65000;readTimeout=65000 }
+            if(c.responseCode!=200) throw IllegalStateException("HTTP "+c.responseCode)
+            val json=JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            c.disconnect()
+            if(json.optString("device_key")!=deviceKey()) throw IllegalStateException("Conta divergente")
+            runOnUiThread {
+                base("Registros persistentes","Histórico de atualizações da conta de demonstração")
+                val items=json.getJSONArray("snapshots")
+                if(items.length()==0) root.addView(label("Nenhum snapshot registrado ainda.",16f))
+                for(i in 0 until items.length()) {
+                    val item=items.getJSONObject(i)
+                    root.addView(label(item.optString("created_at")+" • "+item.optString("event_type")+"\n"+money(item.getDouble("portfolio_value_brl")),16f,navy,12,10))
+                }
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread {
+            base("Não foi possível carregar registros","Tente novamente quando o servidor estiver disponível.")
+            root.addView(button("Tentar novamente"){loadPaperSnapshots(profile)})
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
     }
 
     private fun requestHistory(profile:String) {
