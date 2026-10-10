@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal
 
+from app.rebalance_engine import plan_rebalance
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
@@ -134,3 +135,13 @@ def create_account_snapshot(device_key: str, payload: PortfolioRequest):
     account = update_account(account.id, payload.risk_profile, total)
     snapshot = save_snapshot(account.id, "portfolio_mark", payload.risk_profile, total, json.dumps(body))
     return {"status":"SAVED","snapshot_id":snapshot.id,"account_id":account.id,"device_key":device_key,"current_value_brl":account.current_value_brl,"risk_profile":account.risk_profile,"mode":"PAPER","real_money":False}
+
+
+@app.post("/portfolio/rebalance-decision")
+def rebalance_decision(payload: PortfolioRequest):
+    """PAPER-only decision; no order is submitted or persisted."""
+    _, _, positions, _ = build_positions(payload, 4)
+    holdings = {p["symbol"]: p["market_value_brl"] for p in positions}
+    targets = {ASSETS[bucket]["symbol"]: weight for bucket, weight in POLICY[payload.risk_profile].items()}
+    result = plan_rebalance(holdings, targets, threshold_pp=1.0, min_trade_brl=20.0)
+    return {"engine_version": "5.0.0", "risk_profile": payload.risk_profile, **result}
