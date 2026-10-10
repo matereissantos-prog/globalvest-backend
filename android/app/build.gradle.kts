@@ -15,8 +15,8 @@ android {
         applicationId = "com.globalvest.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "4.7.0"
+        versionCode = 48
+        versionName = "4.8.0"
         buildConfigField("String", "API_BASE_URL", "\"https://globalvest-backend-1.onrender.com\"")
     }
 
