@@ -209,7 +209,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 records.sortBy { it.first }
                 val initial=10000.0
-                val values=listOf(initial)+records.map { it.second }
+                val chartRecords=records.filterIndexed { i, record -> i==0 || kotlin.math.abs(record.second-records[i-1].second)>0.005 }
+                val values=listOf(initial)+chartRecords.map { it.second }
                 val latest=values.last()
                 val change=latest-initial
                 val percent=change/initial*100
@@ -217,7 +218,8 @@ class MainActivity : AppCompatActivity() {
                 root.addView(label("Inicial: "+money(initial)+" • Atual: "+money(latest),16f,navy))
                 root.addView(label("Variação acumulada: "+signedMoney(change)+" ("+String.format(Locale("pt","BR"),"%+.2f",percent)+"%)",16f,if(change>=0)green else Color.RED))
                 root.addView(label("Avaliações registradas: "+records.size,15f,Color.DKGRAY))
-                root.addView(PaperChart(values).apply { minimumHeight=440 })
+                root.addView(label("Pontos distintos no gráfico: "+chartRecords.size,14f,Color.DKGRAY))
+                root.addView(PaperChart(values,chartRecords.lastOrNull()?.first).apply { minimumHeight=440 })
                 if(records.isEmpty()) root.addView(label("Nenhum snapshot registrado ainda. O gráfico mostra apenas o capital inicial.",15f))
                 for(i in records.indices.reversed()) {
                     val (date,value)=records[i]
@@ -241,7 +243,7 @@ class MainActivity : AppCompatActivity() {
         } } }.start()
     }
 
-    private inner class PaperChart(private val values:List<Double>):View(this) {
+    private inner class PaperChart(private val values:List<Double>,private val lastTimestamp:String?):View(this) {
         private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(canvas:Canvas) {
             super.onDraw(canvas)
@@ -265,7 +267,8 @@ class MainActivity : AppCompatActivity() {
             else for(i in 1 until values.size) canvas.drawLine(x(i-1),y(values[i-1]),x(i),y(values[i]),paint)
             paint.style=Paint.Style.FILL;paint.color=navy;paint.textSize=26f
             canvas.drawText("Início",left,bottom+40f,paint)
-            canvas.drawText("Atual",right-65f,bottom+40f,paint)
+            val dateLabel=lastTimestamp?.take(10)?.split("-")?.let { if(it.size==3) it[2]+"/"+it[1] else "Atual" } ?: "Atual"
+            canvas.drawText(dateLabel,right-85f,bottom+40f,paint)
         }
     }
 
