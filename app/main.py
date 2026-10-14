@@ -5,6 +5,7 @@ from typing import Literal
 
 from app.rebalance_engine import plan_rebalance
 from app.decision_explainer import explain_rebalance
+from app.risk_shield import assess_risk
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
@@ -169,3 +170,10 @@ def paper_decisions(device_key: str, limit: int = 20):
     account = get_or_create_account(device_key)
     rows = [r for r in list_snapshots(account.id, 100) if r.event_type == "rebalance_decision"][:min(max(limit, 1), 100)]
     return {"mode": "PAPER", "real_money": False, "device_key": device_key, "count": len(rows), "decisions": [{"id": r.id, "created_at": r.created_at, **json.loads(r.payload_json)} for r in rows]}
+
+
+@app.post("/portfolio/risk-shield")
+def portfolio_risk_shield(payload: PortfolioRequest):
+    """PAPER-only drift and concentration checks using synthetic holdings."""
+    decision = rebalance_decision(payload)
+    return {"risk_profile": payload.risk_profile, "assessment": assess_risk(decision), "broker_order_sent": False, "direct_execution": False}
