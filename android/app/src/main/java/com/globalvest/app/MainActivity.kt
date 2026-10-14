@@ -136,6 +136,9 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Ver registros da conta"){loadPaperSnapshots(profile)})
         root.addView(button("Gráfico de evolução patrimonial"){loadPaperSnapshots(profile)})
         root.addView(button("Prévia de rebalanceamento"){requestRebalance(profile)})
+        root.addView(button("Risk Shield • riscos"){requestRiskShield(profile)})
+        root.addView(button("Registrar decisão explicada"){recordDecision(profile)})
+        root.addView(button("Histórico de decisões"){loadDecisions(profile)})
         root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
     }
 
@@ -205,7 +208,7 @@ class MainActivity : AppCompatActivity() {
                 val records=mutableListOf<Pair<String,Double>>()
                 for(i in 0 until items.length()) {
                     val item=items.getJSONObject(i)
-                    records.add(item.optString("created_at") to item.getDouble("portfolio_value_brl"))
+                    if(item.optString("event_type")=="portfolio_mark") records.add(item.optString("created_at") to item.getDouble("portfolio_value_brl"))
                 }
                 records.sortBy { it.first }
                 val initial=10000.0
@@ -315,4 +318,66 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this,"Conectando ao servidor…",Toast.LENGTH_SHORT).show()
         Thread { try { val c=(URL(BuildConfig.API_BASE_URL+"/health").openConnection() as HttpsURLConnection).apply { requestMethod="GET"; connectTimeout=65000; readTimeout=65000 }; val body=c.inputStream.bufferedReader().use{it.readText()}; runOnUiThread { Toast.makeText(this,if(c.responseCode in 200..299&&body.contains("PAPER"))"Servidor ONLINE ✓ • PAPER confirmado" else "Servidor respondeu, validação pendente",Toast.LENGTH_LONG).show() } } catch(e:Exception){ runOnUiThread { Toast.makeText(this,"Servidor gratuito pode estar acordando. Tente novamente em instantes.",Toast.LENGTH_LONG).show() } } }.start()
     }
+    private fun requestRiskShield(profile:String) {
+        base("Risk Shield","Analisando limites demonstrativos…")
+        Thread { try {
+            val json=post("/portfolio/risk-shield",profile)
+            val assessment=json.getJSONObject("assessment")
+            if(assessment.optString("mode")!="PAPER" || assessment.optBoolean("real_money",true) || assessment.optBoolean("execution_allowed",true) || json.optBoolean("broker_order_sent",true)) throw IllegalStateException("Resposta insegura")
+            runOnUiThread {
+                base("Risk Shield","Riscos da carteira simulada • sem dados reais")
+                root.addView(label("Maior desvio: "+assessment.optDouble("max_drift_pp")+" p.p.",18f,navy))
+                root.addView(label("Maior concentração: "+assessment.optDouble("max_single_asset_weight_pct")+"%",18f,navy))
+                val alerts=assessment.getJSONArray("alerts")
+                for(i in 0 until alerts.length()) root.addView(label("• "+alerts.getJSONObject(i).optString("message"),16f,Color.DKGRAY))
+                root.addView(label(assessment.optString("limitations"),14f,Color.GRAY,16,16))
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread { base("Risk Shield indisponível","Não foi possível consultar os riscos.");root.addView(button("Voltar"){showDashboardFor(profile)}) } } }.start()
+    }
+
+    private fun recordDecision(profile:String) {
+        base("Decisão explicada","Registrando análise PAPER no servidor…")
+        Thread { try {
+            val json=post("/demo/account/"+deviceKey()+"/decision-record",profile)
+            if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optBoolean("broker_order_sent",true) || json.optString("device_key")!=deviceKey()) throw IllegalStateException("Resposta insegura")
+            val explanation=json.getJSONObject("explanation")
+            if(explanation.optBoolean("execution_allowed",true) || explanation.optBoolean("generative_ai_used",true)) throw IllegalStateException("Explicação inválida")
+            runOnUiThread {
+                base("Decisão registrada ✓","Histórico auditável • PAPER")
+                root.addView(label(explanation.optString("summary"),18f,navy))
+                root.addView(label(explanation.optString("reason"),16f,Color.DKGRAY))
+                root.addView(label("Explicação por regras verificáveis, não IA generativa.",14f,Color.GRAY,12,12))
+                root.addView(button("Ver histórico"){loadDecisions(profile)})
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread { base("Registro não confirmado","Confira a conexão e o histórico antes de tentar novamente.");root.addView(button("Ver histórico"){loadDecisions(profile)});root.addView(button("Voltar"){showDashboardFor(profile)}) } } }.start()
+    }
+
+    private fun loadDecisions(profile:String) {
+        base("Histórico de decisões","Consultando decisões PAPER…")
+        Thread { try {
+            val c=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()+"/decisions").openConnection() as HttpsURLConnection).apply { requestMethod="GET";connectTimeout=65000;readTimeout=65000 }
+            if(c.responseCode!=200) throw IllegalStateException("HTTP "+c.responseCode)
+            val json=JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            c.disconnect()
+            if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optString("device_key")!=deviceKey()) throw IllegalStateException("Resposta insegura")
+            runOnUiThread {
+                base("Histórico de decisões","Registros explicados • nenhuma ordem executada")
+                val items=json.getJSONArray("decisions")
+                if(items.length()==0) root.addView(label("Ainda não há decisões registradas.",16f))
+                for(i in 0 until items.length()) {
+                    val item=items.getJSONObject(i)
+                    val decision=item.getJSONObject("decision")
+                    val explanation=item.getJSONObject("explanation")
+                    root.addView(label(item.optString("created_at")+" • "+decision.optString("status"),14f,blue,16,2))
+                    root.addView(label(explanation.optString("summary"),16f,navy,0,2))
+                    root.addView(label(explanation.optString("reason"),14f,Color.DKGRAY,0,8))
+                }
+                root.addView(label("PAPER • preços sintéticos • sem dinheiro real",14f,Color.GRAY,16,12))
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread { base("Histórico indisponível","Não foi possível consultar os registros.");root.addView(button("Voltar"){showDashboardFor(profile)}) } } }.start()
+    }
+
 }
