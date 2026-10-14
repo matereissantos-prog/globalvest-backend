@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from app.rebalance_engine import plan_rebalance
+from app.decision_explainer import explain_rebalance
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
@@ -145,3 +146,26 @@ def rebalance_decision(payload: PortfolioRequest):
     targets = {ASSETS[bucket]["symbol"]: weight for bucket, weight in POLICY[payload.risk_profile].items()}
     result = plan_rebalance(holdings, targets, threshold_pp=1.0, min_trade_brl=20.0)
     return {"engine_version": "5.0.0", "risk_profile": payload.risk_profile, **result}
+
+
+@app.post("/portfolio/decision-explanation")
+def decision_explanation(payload: PortfolioRequest):
+    """Explain the PAPER decision using deterministic rules, not a language model."""
+    decision = rebalance_decision(payload)
+    return {**decision, "explanation": explain_rebalance(decision)}
+
+@app.post("/demo/account/{device_key}/decision-record")
+def record_paper_decision(device_key: str, payload: PortfolioRequest):
+    """Persist a decision record; no trade, cash movement, or broker order."""
+    account = get_or_create_account(device_key, payload.risk_profile)
+    decision = rebalance_decision(payload)
+    explanation = explain_rebalance(decision)
+    record = {"decision": decision, "explanation": explanation, "source": "synthetic_demo_path", "paper_only": True}
+    snapshot = save_snapshot(account.id, "rebalance_decision", payload.risk_profile, decision["portfolio_value_brl"], json.dumps(record))
+    return {"status": "RECORDED", "record_id": snapshot.id, "account_id": account.id, "device_key": device_key, "mode": "PAPER", "real_money": False, "broker_order_sent": False, "explanation": explanation}
+
+@app.get("/demo/account/{device_key}/decisions")
+def paper_decisions(device_key: str, limit: int = 20):
+    account = get_or_create_account(device_key)
+    rows = [r for r in list_snapshots(account.id, 100) if r.event_type == "rebalance_decision"][:min(max(limit, 1), 100)]
+    return {"mode": "PAPER", "real_money": False, "device_key": device_key, "count": len(rows), "decisions": [{"id": r.id, "created_at": r.created_at, **json.loads(r.payload_json)} for r in rows]}
