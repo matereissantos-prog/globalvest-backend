@@ -412,4 +412,52 @@ class MainActivity : AppCompatActivity() {
         } } }.start()
     }
 
+    private fun showAdvisor(profile:String) {
+        base("GlobalVest AI Advisor","Prévia por regras • sem IA generativa ou dados reais")
+        root.addView(label("Pergunte sobre riscos, rebalanceamento ou cenários simulados.",16f,Color.DKGRAY))
+        val question=EditText(this).apply {
+            hint="Ex.: Qual é o risco da minha carteira?"
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines=2
+            maxLines=4
+        }
+        root.addView(question)
+        root.addView(button("Perguntar ao assistente") {
+            val prompt=question.text.toString().trim()
+            if(prompt.isBlank() || prompt.length>500) {
+                Toast.makeText(this,"Digite uma pergunta de até 500 caracteres.",Toast.LENGTH_LONG).show()
+            } else {
+                base("GlobalVest AI Advisor","Consultando análise simulada…")
+                Thread { try {
+                    val connection=(URL(BuildConfig.API_BASE_URL+"/advisor/ask").openConnection() as HttpsURLConnection).apply {
+                        requestMethod="POST"
+                        connectTimeout=65000
+                        readTimeout=65000
+                        doOutput=true
+                        setRequestProperty("Content-Type","application/json")
+                    }
+                    val request=JSONObject().put("risk_profile",apiProfile(profile)).put("capital_brl",10000).put("question",prompt)
+                    connection.outputStream.bufferedWriter().use { it.write(request.toString()) }
+                    if(connection.responseCode!=200) throw IllegalStateException("HTTP "+connection.responseCode)
+                    val json=JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    connection.disconnect()
+                    if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) || json.optBoolean("generative_ai_used",true) || json.optBoolean("execution_allowed",true) || json.optBoolean("broker_order_sent",true)) throw IllegalStateException("Resposta insegura")
+                    runOnUiThread {
+                        base("GlobalVest AI Advisor","Explicação demonstrativa • somente leitura")
+                        root.addView(label("Sua pergunta: "+prompt,16f,blue,4,12))
+                        root.addView(label(json.optString("answer"),18f,navy,0,12))
+                        root.addView(label("Regras verificáveis e dados sintéticos. Não é recomendação financeira individual.",14f,Color.GRAY,8,12))
+                        root.addView(button("Fazer outra pergunta"){showAdvisor(profile)})
+                        root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+                    }
+                } catch(e:Exception) { runOnUiThread {
+                    base("Assistente indisponível","Não foi possível obter uma resposta validada.")
+                    root.addView(button("Tentar novamente"){showAdvisor(profile)})
+                    root.addView(button("Voltar"){showDashboardFor(profile)})
+                } } }.start()
+            }
+        })
+        root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
 }
