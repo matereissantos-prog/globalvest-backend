@@ -30,6 +30,29 @@ class PortfolioSnapshot(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class ManualPaperWallet(SQLModel, table=True):
+    account_id: int = Field(primary_key=True)
+    cash_cents: int = 1000000
+
+
+class ManualPaperPosition(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(index=True)
+    symbol: str = Field(index=True)
+    quantity_micro: int = 0
+
+
+class ManualPaperTrade(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(index=True)
+    symbol: str
+    side: str
+    amount_cents: int
+    quantity_micro: int
+    price_cents: int
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./globalvest.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
