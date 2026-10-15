@@ -6,6 +6,7 @@ from typing import Literal
 from app.rebalance_engine import plan_rebalance
 from app.decision_explainer import explain_rebalance
 from app.risk_shield import assess_risk
+from app.stress_lab import stress_test
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
@@ -177,3 +178,11 @@ def portfolio_risk_shield(payload: PortfolioRequest):
     """PAPER-only drift and concentration checks using synthetic holdings."""
     decision = rebalance_decision(payload)
     return {"risk_profile": payload.risk_profile, "assessment": assess_risk(decision), "broker_order_sent": False, "direct_execution": False}
+
+
+@app.post("/portfolio/stress-test")
+def portfolio_stress_test(payload: PortfolioRequest):
+    """Hypothetical shocks to PAPER positions; no market prediction or trade."""
+    _, _, positions, _ = build_positions(payload, 4)
+    holdings = {p["symbol"]: p["market_value_brl"] for p in positions}
+    return {"risk_profile": payload.risk_profile, **stress_test(holdings)}
