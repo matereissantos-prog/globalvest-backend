@@ -140,6 +140,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Simular cenários de risco"){requestStressLab(profile)})
         root.addView(button("GlobalVest AI Advisor"){showAdvisor(profile)})
         root.addView(button("Autorizações simuladas"){showPaperReview(profile)})
+        root.addView(button("Operar manualmente • PAPER"){showManualTrading(profile)})
         root.addView(button("Registrar decisão explicada"){recordDecision(profile)})
         root.addView(button("Histórico de decisões"){loadDecisions(profile)})
         root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
