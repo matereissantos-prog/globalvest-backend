@@ -203,3 +203,27 @@ def advisor_ask(payload: AdvisorQuestion):
     assessment = assess_risk(decision)
     stress = portfolio_stress_test(portfolio)
     return answer_question(payload.question, decision, assessment, stress)
+
+
+class PaperReviewRequest(PortfolioRequest):
+    choice: Literal["APPROVE", "REJECT"]
+    acknowledgement: bool = False
+
+
+@app.post("/demo/account/{device_key}/proposal-review")
+def paper_proposal_review(device_key: str, payload: PaperReviewRequest):
+    """Record a non-executable demonstration review, never an order."""
+    if not payload.acknowledgement:
+        raise HTTPException(status_code=422, detail="Simulation acknowledgement required")
+    account = get_or_create_account(device_key, payload.risk_profile)
+    decision = rebalance_decision(payload)
+    record = {"choice": payload.choice, "decision_status": decision["status"],
+              "suggested_paper_orders": decision.get("orders", []),
+              "paper_only": True, "execution_allowed": False,
+              "broker_order_sent": False}
+    snapshot = save_snapshot(account.id, "paper_proposal_review", payload.risk_profile,
+                             decision["portfolio_value_brl"], json.dumps(record))
+    return {"record_id": snapshot.id, "choice": payload.choice, "mode": "PAPER",
+            "real_money": False, "execution_allowed": False,
+            "broker_order_sent": False, "direct_execution": False,
+            "message": "Review saved as demonstration only; no order placed."}
