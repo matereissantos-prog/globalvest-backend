@@ -506,4 +506,73 @@ class MainActivity : AppCompatActivity() {
         } } }.start()
     }
 
+    private fun showManualTrading(profile:String) {
+        base("Operação manual","Prévia PAPER • você escolhe, sem autorização da IA")
+        val asset=Spinner(this)
+        asset.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,
+            listOf("GV-WORLD","GV-BOND","GV-CASH"))
+        root.addView(label("Ativo demonstrativo",16f,navy))
+        root.addView(asset)
+        val side=Spinner(this)
+        side.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,
+            listOf("Comprar","Vender"))
+        root.addView(label("Tipo de operação",16f,navy))
+        root.addView(side)
+        val amount=EditText(this).apply {
+            hint="Valor em reais (ex.: 250,00)"
+            inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        root.addView(amount)
+        root.addView(label("Esta função só calcula uma prévia. Não altera posições nem movimenta dinheiro.",14f,Color.GRAY,10,14))
+        root.addView(button("Calcular prévia"){ 
+            val value=amount.text.toString().replace(",",".").toDoubleOrNull()
+            if(value==null || !value.isFinite() || value<=0 || value>1000000) {
+                Toast.makeText(this,"Informe um valor válido entre R$ 0,01 e R$ 1.000.000.",Toast.LENGTH_LONG).show()
+            } else {
+                val symbol=asset.selectedItem.toString()
+                val direction=if(side.selectedItemPosition==0) "BUY" else "SELL"
+                loadManualPreview(profile,symbol,direction,value)
+            }
+        })
+        root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
+    private fun loadManualPreview(profile:String,symbol:String,side:String,amount:Double) {
+        base("Prévia manual","Consultando preços sintéticos…")
+        Thread { try {
+            val connection=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()+"/manual-preview").openConnection() as HttpsURLConnection).apply {
+                requestMethod="POST"
+                connectTimeout=65000
+                readTimeout=65000
+                doOutput=true
+                setRequestProperty("Content-Type","application/json")
+            }
+            val request=JSONObject().put("symbol",symbol).put("side",side)
+                .put("amount_brl",amount).put("acknowledge_simulation",true)
+            connection.outputStream.bufferedWriter().use { it.write(request.toString()) }
+            if(connection.responseCode!=200) throw IllegalStateException("HTTP "+connection.responseCode)
+            val json=JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            connection.disconnect()
+            if(json.optString("mode")!="PAPER" || json.optString("status")!="PREVIEW_ONLY" ||
+                json.optBoolean("real_money",true) || json.optBoolean("live_market_data",true) ||
+                json.optBoolean("execution_allowed",true) || json.optBoolean("broker_order_sent",true) ||
+                json.optBoolean("direct_execution",true) || json.optString("symbol")!=symbol ||
+                json.optString("side")!=side) throw IllegalStateException("Prévia insegura")
+            runOnUiThread {
+                base("Prévia de operação","Modo manual • nenhuma ordem executada")
+                root.addView(label((if(side=="BUY") "Compra" else "Venda")+" • "+symbol,20f,navy))
+                root.addView(label("Valor: "+money(json.getDouble("amount_brl")),18f))
+                root.addView(label("Preço sintético por unidade: "+money(json.getDouble("unit_price_brl")),16f))
+                root.addView(label("Quantidade estimada: "+String.format(Locale("pt","BR"),"%.6f",json.getDouble("estimated_quantity")),16f))
+                root.addView(label("Somente prévia. Nenhuma posição, saldo ou ordem foi alterada.",14f,Color.GRAY,16,14))
+                root.addView(button("Preparar outra operação"){showManualTrading(profile)})
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread {
+            base("Prévia indisponível","Não foi possível validar a operação simulada.")
+            root.addView(button("Tentar novamente"){showManualTrading(profile)})
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
+    }
+
 }
