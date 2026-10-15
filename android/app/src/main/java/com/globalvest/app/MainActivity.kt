@@ -566,7 +566,6 @@ class MainActivity : AppCompatActivity() {
                 root.addView(label("Preço sintético por unidade: "+money(json.getDouble("unit_price_brl")),16f))
                 root.addView(label("Quantidade estimada: "+String.format(Locale("pt","BR"),"%.6f",json.getDouble("estimated_quantity")),16f))
                 root.addView(label("Somente prévia. Nenhuma posição, saldo ou ordem foi alterada.",14f,Color.GRAY,16,14))
-                root.addView(button("Confirmar compra/venda simulada"){confirmPaperTrade(profile,symbol,side,amount)})
                 root.addView(button("Preparar outra operação"){showManualTrading(profile)})
                 root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
             }
