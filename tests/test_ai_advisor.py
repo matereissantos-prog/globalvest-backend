@@ -40,3 +40,10 @@ def test_advisor_rejects_empty_question():
     except ValueError:
         return
     assert False, "Empty question accepted"
+
+
+def test_question_about_35_percent_fall():
+    result = answer_question('O que acontece com minha carteira se a bolsa global cair 35%?', *sample())
+    assert result['topic'] == 'scenarios'
+    assert 'Bolsa global -35%' in result['answer']
+    assert '8075.00' in result['answer']
