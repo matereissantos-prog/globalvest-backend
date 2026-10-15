@@ -3,6 +3,7 @@
 No generative model, external feeds, trading actions, or personal advice.
 """
 import unicodedata
+import re
 
 TOPICS = ("overview", "risk", "rebalance", "scenarios", "limitations")
 
@@ -17,11 +18,26 @@ def answer_question(question, decision, risk, stress):
     if risk.get("mode") != "PAPER" or stress.get("mode") != "PAPER":
         raise ValueError("Unsafe data source")
     q = _normalize(question)
-    if any(word in q for word in ("cenario", "queda", "crise", "perder", "simulacao")):
+    if any(word in q for word in ("cenario", "queda", "crise", "perder", "simulacao", "cair", "cai", "despenc", "bolsa")):
         topic = "scenarios"
-        worst = min(stress["scenarios"], key=lambda item: item["hypothetical_change_pct"])
-        answer = ("No pior dos cenarios hipoteticos cadastrados (%s), a carteira teria variacao de %.2f%%. "
-                  "Isso nao e uma previsao ou perda maxima." % (worst["label"], worst["hypothetical_change_pct"]))
+        percentage = re.search(r"(?<!\\d)(\\d{1,3})\\s*%", q)
+        selected = None
+        if percentage:
+            shock = -int(percentage.group(1))
+            for scenario in stress["scenarios"]:
+                if scenario["shocks_pct"].get("GV-WORLD") == shock and scenario["shocks_pct"].get("GV-BOND") == 0:
+                    selected = scenario
+                    break
+        if selected is None and percentage:
+            answer = ("Nao ha um cenario cadastrado para a queda solicitada. "
+                      "Consulte o simulador para ver os cenarios disponiveis; nao vou inventar um calculo.")
+        else:
+            selected = selected or min(stress["scenarios"], key=lambda item: item["hypothetical_change_pct"])
+            answer = ("No cenario hipotetico %s, a carteira de R$ %.2f passaria a R$ %.2f "
+                      "(variacao de %.2f%%, ou R$ %.2f). Isso nao e previsao nem perda maxima." %
+                      (selected["label"], stress["starting_value_brl"],
+                       selected["hypothetical_value_brl"], selected["hypothetical_change_pct"],
+                       selected["hypothetical_change_brl"]))
     elif any(word in q for word in ("rebalance", "comprar", "vender", "ajust", "decisao")):
         topic = "rebalance"
         action = "manter a carteira" if decision["status"] == "NO_ACTION" else "propor ajustes apenas simulados"
@@ -43,7 +59,7 @@ def answer_question(question, decision, risk, stress):
                   (decision["portfolio_value_brl"], decision["risk_profile"]))
     return {
         "assistant": "GlobalVest AI Advisor Preview",
-        "assistant_version": "rules-0.1.0",
+        "assistant_version": "rules-0.2.0",
         "mode": "PAPER", "real_money": False, "generative_ai_used": False,
         "topic": topic, "answer": answer,
         "source": "synthetic_portfolio_rules",
