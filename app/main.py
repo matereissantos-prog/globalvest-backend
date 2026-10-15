@@ -8,6 +8,7 @@ from app.decision_explainer import explain_rebalance
 from app.risk_shield import assess_risk
 from app.stress_lab import stress_test
 from app.ai_advisor import answer_question
+from app.manual_paper_wallet import wallet_state, execute_paper
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
@@ -253,3 +254,25 @@ def manual_paper_preview(device_key: str, payload: ManualPaperRequest):
             "execution_allowed": False, "broker_order_sent": False,
             "direct_execution": False,
             "disclaimer": "Synthetic-price preview. No trade or position change."}
+
+
+@app.get("/demo/account/{device_key}/manual-wallet")
+def get_manual_wallet(device_key: str):
+    account = get_or_create_account(device_key)
+    return wallet_state(account.id)
+
+
+class ManualPaperExecution(ManualPaperRequest):
+    confirm_paper: bool = False
+
+
+@app.post("/demo/account/{device_key}/manual-paper-trade")
+def manual_paper_trade(device_key: str, payload: ManualPaperExecution):
+    """Execute only against an isolated fictitious ledger."""
+    if not payload.acknowledge_simulation or not payload.confirm_paper:
+        raise HTTPException(status_code=422, detail="Explicit PAPER confirmation required")
+    account = get_or_create_account(device_key)
+    try:
+        return execute_paper(account.id, payload.symbol, payload.side, payload.amount_brl)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
