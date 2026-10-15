@@ -187,3 +187,19 @@ def portfolio_stress_test(payload: PortfolioRequest):
     _, _, positions, _ = build_positions(payload, 4)
     holdings = {p["symbol"]: p["market_value_brl"] for p in positions}
     return {"risk_profile": payload.risk_profile, **stress_test(holdings)}
+
+
+class AdvisorQuestion(BaseModel):
+    risk_profile: RiskProfile = "moderate"
+    capital_brl: float = Field(default=10000.0, gt=0, le=10000000)
+    question: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/advisor/ask")
+def advisor_ask(payload: AdvisorQuestion):
+    """Read-only responses using deterministic synthetic portfolio analysis."""
+    portfolio = PortfolioRequest(risk_profile=payload.risk_profile, capital_brl=payload.capital_brl)
+    decision = rebalance_decision(portfolio)
+    assessment = assess_risk(decision)
+    stress = portfolio_stress_test(portfolio)
+    return answer_question(payload.question, decision, assessment, stress)
