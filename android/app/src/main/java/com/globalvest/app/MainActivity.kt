@@ -576,4 +576,45 @@ class MainActivity : AppCompatActivity() {
         } } }.start()
     }
 
+    private fun showManualWallet(profile:String) {
+        base("Carteira manual PAPER","Saldo, posições e histórico fictícios")
+        Thread { try {
+            val connection=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()+"/manual-wallet").openConnection() as HttpsURLConnection).apply {
+                connectTimeout=65000
+                readTimeout=65000
+            }
+            if(connection.responseCode!=200) throw IllegalStateException("HTTP "+connection.responseCode)
+            val json=JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            connection.disconnect()
+            if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) ||
+                json.optBoolean("broker_order_sent",true) || json.optBoolean("direct_execution",true))
+                throw IllegalStateException("Carteira insegura")
+            runOnUiThread {
+                base("Carteira manual PAPER","Dados sintéticos • sem dinheiro real")
+                root.addView(label("Saldo disponível: "+money(json.getDouble("cash_brl")),21f,green))
+                val positions=json.getJSONArray("positions")
+                root.addView(label("Posições ("+positions.length()+")",18f,navy,16,8))
+                if(positions.length()==0) root.addView(label("Nenhuma posição simulada.",15f,Color.GRAY))
+                for(i in 0 until positions.length()) {
+                    val p=positions.getJSONObject(i)
+                    root.addView(label(p.getString("symbol")+" • "+String.format(Locale("pt","BR"),"%.6f",p.getDouble("quantity"))+" un. • "+money(p.getDouble("market_value_brl")),15f,Color.DKGRAY))
+                }
+                val trades=json.getJSONArray("trades")
+                root.addView(label("Últimas operações ("+trades.length()+")",18f,navy,16,8))
+                if(trades.length()==0) root.addView(label("Nenhuma operação simulada.",15f,Color.GRAY))
+                for(i in 0 until trades.length()) {
+                    val t=trades.getJSONObject(i)
+                    root.addView(label((if(t.getString("side")=="BUY") "Compra" else "Venda")+" • "+t.getString("symbol")+" • "+money(t.getDouble("amount_brl")),15f,Color.DKGRAY))
+                }
+                root.addView(button("Nova operação manual"){showManualTrading(profile)})
+                root.addView(button("Atualizar carteira"){showManualWallet(profile)})
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread {
+            base("Carteira indisponível","Não foi possível carregar os dados PAPER.")
+            root.addView(button("Tentar novamente"){showManualWallet(profile)})
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
+    }
+
 }
