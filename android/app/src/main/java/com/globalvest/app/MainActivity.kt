@@ -137,6 +137,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Gráfico de evolução patrimonial"){loadPaperSnapshots(profile)})
         root.addView(button("Prévia de rebalanceamento"){requestRebalance(profile)})
         root.addView(button("Risk Shield • riscos"){requestRiskShield(profile)})
+        root.addView(button("Simular cenários de risco"){requestStressLab(profile)})
         root.addView(button("Registrar decisão explicada"){recordDecision(profile)})
         root.addView(button("Histórico de decisões"){loadDecisions(profile)})
         root.addView(button("Alterar perfil"){showRisk()}); root.addView(button("Verificar servidor"){testHealth()})
@@ -370,7 +371,7 @@ class MainActivity : AppCompatActivity() {
                     val item=items.getJSONObject(i)
                     val decision=item.getJSONObject("decision")
                     val explanation=item.getJSONObject("explanation")
-                    root.addView(label(item.optString("created_at")+" • "+decision.optString("status"),14f,blue,16,2))
+                    root.addView(label(formatDecisionDate(item.optString("created_at"))+" • "+(if(decision.optString("status")=="NO_ACTION") "Manter carteira" else "Ajustes simulados propostos"),14f,blue,16,2))
                     root.addView(label(explanation.optString("summary"),16f,navy,0,2))
                     root.addView(label(explanation.optString("reason"),14f,Color.DKGRAY,0,8))
                 }
@@ -378,6 +379,36 @@ class MainActivity : AppCompatActivity() {
                 root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
             }
         } catch(e:Exception) { runOnUiThread { base("Histórico indisponível","Não foi possível consultar os registros.");root.addView(button("Voltar"){showDashboardFor(profile)}) } } }.start()
+    }
+
+    private fun formatDecisionDate(raw:String):String = try {
+        val instant=java.time.OffsetDateTime.parse(if(raw.endsWith("Z") || raw.contains("+")) raw else raw+"Z").toInstant()
+        java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy 'às' HH:mm",Locale("pt","BR")).withZone(java.time.ZoneId.systemDefault()).format(instant)
+    } catch(e:Exception) { raw.substringBefore(".").replace("T"," ") }
+
+    private fun requestStressLab(profile:String) {
+        base("Simulador de cenários","Calculando impactos hipotéticos…")
+        Thread { try {
+            val json=post("/portfolio/stress-test",profile)
+            if(!paperSafe(json) || json.optBoolean("broker_order_sent",true) || json.optBoolean("direct_execution",true)) throw IllegalStateException("Resposta insegura")
+            val scenarios=json.getJSONArray("scenarios")
+            runOnUiThread {
+                base("Cenários de risco","Simulações hipotéticas • preços sintéticos")
+                root.addView(label("Carteira de referência: "+money(json.getDouble("starting_value_brl")),20f,navy,4,14))
+                for(i in 0 until scenarios.length()) {
+                    val scenario=scenarios.getJSONObject(i)
+                    root.addView(label(scenario.optString("label"),18f,navy,14,2))
+                    root.addView(label("Valor hipotético: "+money(scenario.getDouble("hypothetical_value_brl")),16f,Color.DKGRAY,0,2))
+                    val change=scenario.getDouble("hypothetical_change_pct")
+                    root.addView(label("Impacto: "+String.format(Locale("pt","BR"),"%+.2f",change)+"% ("+signedMoney(scenario.getDouble("hypothetical_change_brl"))+")",16f,if(change<0)Color.RED else green,0,8))
+                }
+                root.addView(label("Cenários ilustrativos, não previsões. Não medem probabilidades nem perdas máximas.",14f,Color.GRAY,16,16))
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread {
+            base("Cenários indisponíveis","Não foi possível consultar o simulador.")
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
     }
 
 }
