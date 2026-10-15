@@ -7,6 +7,7 @@ from app.rebalance_engine import plan_rebalance
 from app.decision_explainer import explain_rebalance
 from app.risk_shield import assess_risk
 from app.stress_lab import stress_test
+from app.ai_advisor import answer_question
 from app.db import create_db_and_tables, get_or_create_account, list_snapshots, save_snapshot, update_account
 
 app = FastAPI(title="GlobalVest Paper Trading API", version="4.4.0")
