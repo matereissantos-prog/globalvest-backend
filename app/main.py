@@ -227,3 +227,29 @@ def paper_proposal_review(device_key: str, payload: PaperReviewRequest):
             "real_money": False, "execution_allowed": False,
             "broker_order_sent": False, "direct_execution": False,
             "message": "Review saved as demonstration only; no order placed."}
+
+
+class ManualPaperRequest(BaseModel):
+    symbol: Literal["GV-WORLD", "GV-BOND", "GV-CASH"]
+    side: Literal["BUY", "SELL"]
+    amount_brl: float = Field(gt=0, le=1000000)
+    acknowledge_simulation: bool = False
+
+
+@app.post("/demo/account/{device_key}/manual-preview")
+def manual_paper_preview(device_key: str, payload: ManualPaperRequest):
+    """Validate a self-directed PAPER instruction without trading or altering holdings."""
+    if not payload.acknowledge_simulation:
+        raise HTTPException(status_code=422, detail="Simulation acknowledgement required")
+    account = get_or_create_account(device_key)
+    price = DEMO_PRICE_PATH[payload.symbol][-1]
+    quantity = round(payload.amount_brl / price, 6)
+    return {"device_key": device_key, "account_id": account.id,
+            "symbol": payload.symbol, "side": payload.side,
+            "amount_brl": round(payload.amount_brl, 2),
+            "unit_price_brl": price, "estimated_quantity": quantity,
+            "status": "PREVIEW_ONLY", "mode": "PAPER",
+            "real_money": False, "live_market_data": False,
+            "execution_allowed": False, "broker_order_sent": False,
+            "direct_execution": False,
+            "disclaimer": "Synthetic-price preview. No trade or position change."}
