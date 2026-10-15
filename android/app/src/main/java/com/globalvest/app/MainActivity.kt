@@ -461,4 +461,48 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
     }
 
+    private fun showPaperReview(profile:String) {
+        base("Autorizações simuladas","Aprovar ou rejeitar apenas registros PAPER")
+        root.addView(label("Nenhuma autorização desta tela permite comprar ou vender ativos.",16f,navy))
+        root.addView(label("A análise atual não contém necessariamente uma proposta de operação. O registro abaixo é apenas uma decisão demonstrativa.",14f,Color.DKGRAY,8,18))
+        root.addView(button("Registrar aprovação demonstrativa"){submitPaperReview(profile,"APPROVE")})
+        root.addView(button("Registrar rejeição demonstrativa"){submitPaperReview(profile,"REJECT")})
+        root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+    }
+
+    private fun submitPaperReview(profile:String,choice:String) {
+        base("Confirmação PAPER","Registrando sua decisão demonstrativa…")
+        Thread { try {
+            val connection=(URL(BuildConfig.API_BASE_URL+"/demo/account/"+deviceKey()+"/proposal-review").openConnection() as HttpsURLConnection).apply {
+                requestMethod="POST"
+                connectTimeout=65000
+                readTimeout=65000
+                doOutput=true
+                setRequestProperty("Content-Type","application/json")
+            }
+            val body=JSONObject().put("risk_profile",apiProfile(profile)).put("capital_brl",10000)
+                .put("choice",choice).put("acknowledgement",true)
+            connection.outputStream.bufferedWriter().use { it.write(body.toString()) }
+            if(connection.responseCode!=200) throw IllegalStateException("HTTP "+connection.responseCode)
+            val json=JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            connection.disconnect()
+            if(json.optString("mode")!="PAPER" || json.optBoolean("real_money",true) ||
+                json.optBoolean("execution_allowed",true) || json.optBoolean("broker_order_sent",true) ||
+                json.optBoolean("direct_execution",true) || json.optString("choice")!=choice)
+                throw IllegalStateException("Resposta insegura")
+            runOnUiThread {
+                base("Registro confirmado","Somente demonstração • nenhuma ordem enviada")
+                root.addView(label(if(choice=="APPROVE") "Aprovação simulada registrada." else "Rejeição simulada registrada.",20f,green))
+                root.addView(label("Registro de auditoria: "+json.optString("record_id"),15f,Color.DKGRAY))
+                root.addView(label("Isto não autoriza operações reais nem cria uma ordem de compra ou venda.",14f,Color.GRAY,10,14))
+                root.addView(button("Nova demonstração"){showPaperReview(profile)})
+                root.addView(button("Voltar ao dashboard"){showDashboardFor(profile)})
+            }
+        } catch(e:Exception) { runOnUiThread {
+            base("Registro não confirmado","Verifique a conexão. Nenhuma operação foi executada.")
+            root.addView(button("Tentar novamente"){showPaperReview(profile)})
+            root.addView(button("Voltar"){showDashboardFor(profile)})
+        } } }.start()
+    }
+
 }
